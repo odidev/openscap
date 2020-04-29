@@ -10,8 +10,8 @@ endif()
 
 project("openscap")
 set(OPENSCAP_VERSION_MAJOR "1")
-set(OPENSCAP_VERSION_MINOR "4")
-set(OPENSCAP_VERSION_PATCH "0")
+set(OPENSCAP_VERSION_MINOR "3")
+set(OPENSCAP_VERSION_PATCH "4")
 
 if(OPENSCAP_VERSION_SUFFIX)
 	set(OPENSCAP_VERSION "${OPENSCAP_VERSION_MAJOR}.${OPENSCAP_VERSION_MINOR}.${OPENSCAP_VERSION_PATCH}_${OPENSCAP_VERSION_SUFFIX}")
@@ -75,6 +75,7 @@ include(FindPkgConfig)
 include(CheckLibraryExists)
 include(CheckFunctionExists)
 include(CheckIncludeFile)
+include(CheckIncludeFiles)
 include(CheckCSourceCompiles)
 include(CMakeDependentOption)
 
@@ -145,6 +146,9 @@ find_package(BZip2)
 # PThread
 if (WIN32)
 	find_package(ZLIB REQUIRED)
+endif()
+
+if (WIN32 AND NOT MINGW)
 	find_package(pthread CONFIG REQUIRED)
 	set(CMAKE_THREAD_LIBS_INIT ${PThreads4W_LIBRARY})
 else()
@@ -195,6 +199,7 @@ check_include_file(sys/mman.h HAVE_MMAN_H)
 check_include_file(sys/uio.h HAVE_UIO_H)
 check_include_file(sys/xattr.h HAVE_SYS_XATTR_H)
 check_include_file(attr/xattr.h HAVE_ATTR_XATTR_H)
+check_include_files("sys/types.h;sys/extattr.h" HAVE_SYS_EXTATTR_H)
 
 # HAVE_ATOMIC_BUILTINS
 check_c_source_compiles("#include <stdint.h>\nint main() {uint16_t foovar=0; uint16_t old=1; uint16_t new=2;__sync_bool_compare_and_swap(&foovar,old,new); return __sync_fetch_and_add(&foovar, 1); __sync_fetch_and_add(&foovar, 1);}" HAVE_ATOMIC_BUILTINS)
@@ -255,7 +260,7 @@ cmake_dependent_option(OPENSCAP_PROBE_INDEPENDENT_YAMLFILECONTENT "Independent y
 # UNIX PROBES
 cmake_dependent_option(OPENSCAP_PROBE_UNIX_DNSCACHE "Unix dnscache probe" ON "ENABLE_PROBES_UNIX" OFF)
 cmake_dependent_option(OPENSCAP_PROBE_UNIX_FILE "Unix file probe" ON "ENABLE_PROBES_UNIX" OFF)
-cmake_dependent_option(OPENSCAP_PROBE_UNIX_FILEEXTENDEDATTRIBUTE "Unix fileextendedattribute probe" ON "ENABLE_PROBES_UNIX; HAVE_SYS_XATTR_H OR HAVE_ATTR_XATTR_H" OFF)
+cmake_dependent_option(OPENSCAP_PROBE_UNIX_FILEEXTENDEDATTRIBUTE "Unix fileextendedattribute probe" ON "ENABLE_PROBES_UNIX; HAVE_SYS_XATTR_H OR HAVE_ATTR_XATTR_H OR HAVE_SYS_EXTATTR_H" OFF)
 cmake_dependent_option(OPENSCAP_PROBE_UNIX_GCONF "Unix gconf probe" ON "ENABLE_PROBES_UNIX; GCONF_FOUND" OFF)
 cmake_dependent_option(OPENSCAP_PROBE_UNIX_INTERFACE "Unix interface probe" ON "ENABLE_PROBES_UNIX" OFF)
 cmake_dependent_option(OPENSCAP_PROBE_UNIX_PASSWORD "Unix password probe" ON "ENABLE_PROBES_UNIX" OFF)
@@ -366,7 +371,7 @@ message(STATUS "  Independent variable probe: ${OPENSCAP_PROBE_INDEPENDENT_VARIA
 
 message(STATUS "")
 message(STATUS "Independent probes incompatible with WIN32 (WIN32 status: ${IS_WIN32})")
-message(STATUS "  Independent environmentvariable probe: ${OPENSCAP_PROBE_INDEPENDENT_ENVIRONMENTVARIABLE}") 
+message(STATUS "  Independent environmentvariable probe: ${OPENSCAP_PROBE_INDEPENDENT_ENVIRONMENTVARIABLE}")
 message(STATUS "  Independent environmentvariable58 probe: ${OPENSCAP_PROBE_INDEPENDENT_ENVIRONMENTVARIABLE58}")
 message(STATUS "  Independent filehash probe: ${OPENSCAP_PROBE_INDEPENDENT_FILEHASH}")
 message(STATUS "  Independent filehash58 probe: ${OPENSCAP_PROBE_INDEPENDENT_FILEHASH58}")
@@ -510,7 +515,13 @@ if (MSVC)
 endif()
 
 if (${CMAKE_C_COMPILER_ID} STREQUAL "GNU" OR ${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pipe -std=c99 -W -Wall -Wnonnull -Wshadow -Wformat -Wundef -Wno-unused-parameter -Wmissing-prototypes -Wno-unknown-pragmas -D_GNU_SOURCE -D_POSIX_C_SOURCE=200112L")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pipe -W -Wall -Wnonnull -Wshadow -Wformat -Wundef -Wno-unused-parameter -Wmissing-prototypes -Wno-unknown-pragmas -D_GNU_SOURCE -std=c99")
+endif()
+if(${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
+	add_link_options(-lkvm -lm -lprocstat)
+else()
+	# We do not define this on FreeBSD as it causes required functionality to not be exposed, e.g. getprogname() and u_<types>
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_POSIX_C_SOURCE=200112L")
 endif()
 if(${CMAKE_SYSTEM_NAME} EQUAL "Solaris")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__EXTENSIONS__")
@@ -545,7 +556,7 @@ include_directories(
 	"src/XCCDF/public/"
 	"src/XCCDF_POLICY/"
 	"src/XCCDF_POLICY/public/"
-	"yaml-filter"
+	"yaml-filter/src/"
 	${CMAKE_BINARY_DIR} # config.h is generated to build directory
 	${LIBXML2_INCLUDE_DIR}
 	${PCRE_INCLUDE_DIRS}
@@ -570,7 +581,7 @@ function(set_oscap_generic_properties TARGET_OBJECT)
 endfunction()
 
 if(OPENSCAP_PROBE_INDEPENDENT_YAMLFILECONTENT)
-	add_library(yamlfilter_object OBJECT yaml-filter/yaml-path.c yaml-filter/yaml-path.h)
+	add_library(yamlfilter_object OBJECT yaml-filter/src/yaml-path.c yaml-filter/src/yaml-path.h)
 	set_oscap_generic_properties(yamlfilter_object)
 endif()
 
